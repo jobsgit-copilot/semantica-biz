@@ -26,6 +26,8 @@
 pip install semantica
 ```
 
+**[English](README.md)** · **[简体中文](README.zh-CN.md)**
+
 </div>
 
 ---

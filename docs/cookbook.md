@@ -4,6 +4,8 @@ description: "Interactive Jupyter notebooks covering everything from your first 
 icon: "flask"
 ---
 
+**[English](cookbook.md)** · **[简体中文](cookbook.zh-CN.md)**
+
 <Tip>
   **Where to start:**
   - **New to Semantica**: begin with [Core Tutorials](#core-tutorials)
