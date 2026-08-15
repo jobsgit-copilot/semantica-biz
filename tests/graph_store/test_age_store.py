@@ -305,6 +305,68 @@ class TestApacheAgeStore(unittest.TestCase):
         # create_graph should NOT be called (graph count=1)
         self.assertNotIn("create_graph", setup_text.split("ag_graph")[1] if "ag_graph" in setup_text else "")
 
+    # -- connect: non-superuser / preloaded AGE --------------------------
+
+    def test_connect_skips_load_when_not_authorized_but_age_preloaded(self):
+        """LOAD 'age' denied but AGE preloaded -> connect still succeeds."""
+        store = ApacheAgeStore(
+            connection_string="host=localhost dbname=agedb user=test",
+            graph_name="preloaded_graph",
+        )
+        self.mock_cursor.reset_mock()
+
+        def fake_execute(sql, *args, **kwargs):
+            if "LOAD 'age'" in str(sql):
+                raise Exception("InsufficientPrivilege: LOAD requires superuser")
+
+        self.mock_cursor.execute.side_effect = fake_execute
+        # pg_proc cypher count=1 (AGE available), ag_graph count=1 (exists)
+        self.mock_cursor.fetchone.side_effect = [(1,), (1,)]
+
+        result = store.connect()
+        self.assertTrue(result)
+
+        executed = [str(c) for c in self.mock_cursor.execute.call_args_list]
+        setup_text = " ".join(executed)
+        self.assertIn("pg_proc", setup_text)
+        self.assertIn("LOAD 'age'", setup_text)
+
+    def test_connect_fails_when_load_denied_and_age_unavailable(self):
+        """LOAD 'age' denied and AGE not present -> ProcessingError."""
+        store = ApacheAgeStore(
+            connection_string="host=localhost dbname=agedb user=test",
+            graph_name="no_age_graph",
+        )
+        self.mock_cursor.reset_mock()
+
+        def fake_execute(sql, *args, **kwargs):
+            if "LOAD 'age'" in str(sql):
+                raise Exception("InsufficientPrivilege: LOAD requires superuser")
+
+        self.mock_cursor.execute.side_effect = fake_execute
+        self.mock_cursor.fetchone.side_effect = [(0,)]  # ag_catalog.cypher missing
+
+        with self.assertRaises(ProcessingError):
+            store.connect()
+
+    def test_connect_respects_skip_load_option(self):
+        """skip_load=True must skip LOAD 'age' entirely."""
+        store = ApacheAgeStore(
+            connection_string="host=localhost dbname=agedb user=test",
+            graph_name="skip_load_graph",
+            skip_load=True,
+        )
+        self.mock_cursor.reset_mock()
+        self.mock_cursor.fetchone.return_value = (1,)  # graph exists
+
+        result = store.connect()
+        self.assertTrue(result)
+
+        executed = [str(c) for c in self.mock_cursor.execute.call_args_list]
+        setup_text = " ".join(executed)
+        self.assertNotIn("LOAD 'age'", setup_text)
+
+
     # -- create_node ------------------------------------------------------
 
     def test_create_node_single_label(self):
