@@ -340,6 +340,7 @@ class ApacheAgeStore:
         self.graph_name = graph_name or config.get("graph_name", "semantica")
 
         self._conn = None
+        self.skip_load = bool(config.get("skip_load", False))
 
         if not PSYCOPG2_AVAILABLE:
             self.logger.warning(
@@ -360,6 +361,14 @@ class ApacheAgeStore:
         3. ``SET search_path = ag_catalog, "$user", public``
         4. ``SELECT create_graph('<graph_name>')`` if not exists.
 
+        Non-superuser notes:
+        - ``CREATE EXTENSION`` / ``LOAD 'age'`` require superuser on plain
+          PostgreSQL installs. When AGE is already installed and preloaded
+          (``shared_preload_libraries``), both can be skipped safely.
+        - Pass ``skip_load=True`` in config to always skip ``LOAD 'age'``;
+          otherwise permission errors are auto-detected and AGE availability
+          is verified before continuing.
+
         Args:
             **options: Additional connection options (currently unused).
 
@@ -379,8 +388,8 @@ class ApacheAgeStore:
 
             # Idempotent AGE setup
             with self._conn.cursor() as cur:
-                cur.execute("CREATE EXTENSION IF NOT EXISTS age;")
-                cur.execute("LOAD 'age';")
+                self._setup_extension(cur)
+                self._load_age(cur)
                 cur.execute(
                     'SET search_path = ag_catalog, "$user", public;'
                 )
@@ -405,6 +414,67 @@ class ApacheAgeStore:
             if self._conn:
                 self._conn.rollback()
             raise ProcessingError(f"Failed to connect to AGE: {str(e)}")
+
+
+
+    def _setup_extension(self, cur) -> None:
+        """
+        Ensure the AGE extension is installed.
+
+        Tolerates non-superuser accounts: if ``CREATE EXTENSION`` is denied,
+        verify the extension already exists before continuing.
+        """
+        try:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS age;")
+        except Exception as e:  # noqa: BLE001 - permission errors surface here
+            # 失败语句会把事务置为 aborted，先回滚再执行恢复检查
+            self._conn.rollback()
+            cur.execute(
+                "SELECT count(*) FROM pg_extension WHERE extname = 'age';"
+            )
+            (count,) = cur.fetchone()
+            if count == 0:
+                raise ProcessingError(
+                    f"AGE extension is not installed: {str(e)}"
+                ) from e
+            self.logger.warning(
+                "CREATE EXTENSION skipped (insufficient privilege); "
+                "AGE extension already installed."
+            )
+
+    def _load_age(self, cur) -> None:
+        """
+        Load the AGE extension for this session.
+
+        ``LOAD 'age'`` requires superuser. When AGE is preloaded via
+        ``shared_preload_libraries`` (common in managed deployments), it is
+        safe to skip; availability is verified via ``ag_catalog.cypher``.
+        Set ``skip_load=True`` in config to always skip the LOAD.
+        """
+        if self.skip_load:
+            self.logger.info(
+                "skip_load=True: skipping LOAD 'age' (AGE assumed preloaded)."
+            )
+            return
+        try:
+            cur.execute("LOAD 'age';")
+        except Exception as e:  # noqa: BLE001 - permission errors surface here
+            # 失败语句会把事务置为 aborted，先回滚再执行恢复检查
+            self._conn.rollback()
+            cur.execute(
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n "
+                "ON p.pronamespace = n.oid "
+                "WHERE n.nspname = 'ag_catalog' AND p.proname = 'cypher';"
+            )
+            (count,) = cur.fetchone()
+            if count == 0:
+                raise ProcessingError(
+                    f"Failed to LOAD 'age': {str(e)}"
+                ) from e
+            self.logger.warning(
+                "LOAD 'age' skipped (insufficient privilege); "
+                "AGE appears preloaded."
+            )
 
     def close(self) -> None:
         """Close the PostgreSQL connection."""
