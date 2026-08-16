@@ -1,20 +1,63 @@
-<e1> a <Person> ;
+@prefix : <https://docs.semantica.dev/cookbook/knowledge-graph#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix semantica: <https://docs.semantica.dev/cookbook/knowledge-graph#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# ---- Classes ----
+:Person a owl:Class ;
+    rdfs:label "Person" .
+
+:Organization a owl:Class ;
+    rdfs:label "Organization" .
+
+:Project a owl:Class ;
+    rdfs:label "Project" .
+
+# ---- Object Properties ----
+:reports_to a owl:ObjectProperty ;
+    rdfs:label "reports to" ;
+    rdfs:domain :Person ;
+    rdfs:range :Person .
+
+:works_for a owl:ObjectProperty ;
+    rdfs:label "works for" ;
+    rdfs:domain :Person ;
+    rdfs:range :Organization .
+
+:works_on a owl:ObjectProperty ;
+    rdfs:label "works on" ;
+    rdfs:domain :Person ;
+    rdfs:range :Project .
+
+# ---- Data Properties ----
+semantica:text a owl:DatatypeProperty ;
+    rdfs:label "text" ;
+    rdfs:range xsd:string .
+
+semantica:confidence a owl:DatatypeProperty ;
+    rdfs:label "confidence" ;
+    rdfs:range xsd:double .
+
+# ---- Instances (extraction example) ----
+:e1 a :Person ;
     semantica:text "" ;
     semantica:confidence 1.0 .
 
-<e2> a <Person> ;
+:e2 a :Person ;
     semantica:text "" ;
     semantica:confidence 1.0 .
 
-<e3> a <Organization> ;
+:e3 a :Organization ;
     semantica:text "" ;
     semantica:confidence 1.0 .
 
-<e4> a <Project> ;
+:e4 a :Project ;
     semantica:text "" ;
     semantica:confidence 1.0 .
 
-<e1> <reports_to> <e2> .
-<e1> <works_for> <e3> .
-<e2> <works_for> <e3> .
-<e1> <works_on> <e4> .
+:e1 :reports_to :e2 .
+:e1 :works_for :e3 .
+:e2 :works_for :e3 .
+:e1 :works_on :e4 .
